@@ -1,0 +1,615 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dexle</title>
+<meta name="description" content="Put six Pokémon in order so every link between neighbours is true. A new puzzle every day, the same one played on the Clem Cobblemon server.">
+<style>
+  @font-face { font-family: "Kalam"; font-weight: 700; font-display: swap; src: url("fonts/Kalam-Bold.woff2") format("woff2"); }
+  @font-face { font-family: "Pixelify Sans"; font-weight: 400 700; font-display: swap; src: url("fonts/PixelifySans.woff2") format("woff2"); }
+  :root {
+    --backdrop: #262A38;
+    --parchment: #D9C49B;
+    --parchment-hi: #E6D5AE;
+    --edge: #8A6A40;
+    --toast: #6E4E26;
+    --ink: #3B2A1A;
+    --faint: #6B5235;
+    --dim: #93795A;
+    --gold: #A0560A;
+    --green: #3A7A1A;
+    --red: #B02A2A;
+    --slot: 96px;
+    --gap: 14px;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    min-height: 100vh;
+    background:
+      radial-gradient(ellipse at 50% 0%, #343A4E 0%, transparent 60%),
+      var(--backdrop);
+    color: var(--ink);
+    font-family: "Pixelify Sans", ui-rounded, system-ui, sans-serif;
+    font-size: 17px;
+    line-height: 1.4;
+    padding: 32px 16px 48px;
+  }
+  button { font: inherit; color: inherit; }
+  :focus-visible { outline: 3px solid var(--gold); outline-offset: 2px; }
+
+  /* ---------------------------------------------------------------- the journal page */
+  .book { position: relative; max-width: 760px; margin: 0 auto; padding-right: 44px; }
+  .page {
+    position: relative;
+    z-index: 1;
+    padding: 28px 34px 30px;
+    background:
+      radial-gradient(ellipse at 50% 40%, rgba(255, 246, 220, .35), transparent 70%),
+      url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 .35 0 0 0 0 .25 0 0 0 0 .12 0 0 0 .16 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>"),
+      var(--parchment);
+    border-radius: 3px;
+    box-shadow:
+      inset 0 0 0 2px rgba(110, 78, 38, .55),
+      inset 0 0 0 6px rgba(217, 196, 155, .9),
+      inset 0 0 0 7px rgba(138, 106, 64, .55),
+      inset 0 0 70px rgba(110, 70, 25, .55),
+      0 18px 40px rgba(0, 0, 0, .45);
+  }
+  h1 {
+    font-family: "Kalam", cursive;
+    font-weight: 700;
+    font-size: 54px;
+    line-height: 1;
+    text-align: center;
+    margin: 4px 0 2px;
+    letter-spacing: .02em;
+    color: var(--ink);
+  }
+  .tagline { text-align: center; color: var(--faint); margin: 0 0 18px; }
+
+  /* ribbons: cloth bookmarks off the right edge */
+  .ribbons { position: absolute; top: 34px; right: 0; display: flex; flex-direction: column; gap: 6px; z-index: 0; }
+  .ribbon {
+    width: 58px; height: 70px; padding: 0 8px 0 24px;
+    border: 0; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    color: #FFF6DC; font-weight: 600; font-size: 13px;
+    writing-mode: vertical-rl; text-orientation: mixed;
+    clip-path: polygon(0 0, 100% 0, 88% 50%, 100% 100%, 0 100%);
+    transform: translateX(-7px);
+    transition: transform .15s ease;
+    box-shadow: inset -4px 0 0 rgba(0,0,0,.12);
+  }
+  .ribbon.today { background: #C8962E; }
+  .ribbon.random { background: #2E6F8A; }
+  .ribbon[aria-pressed="true"] { transform: translateX(0); }
+  .ribbon:hover { transform: translateX(-4px); }
+  .ribbon[aria-pressed="true"]:hover { transform: translateX(0); }
+
+  /* status line */
+  .status { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
+  .status .which { font-weight: 600; }
+  .status .lives-text { color: var(--faint); margin-left: 8px; }
+  .lives { display: flex; gap: 4px; }
+  .life { width: 13px; height: 13px; background: #B04A2A; box-shadow: inset 0 0 0 2px #5A2A1A; }
+  .life.spent { background: rgba(147, 121, 90, .25); box-shadow: inset 0 0 0 2px rgba(147, 121, 90, .5); }
+
+  /* the board */
+  .board { position: relative; }
+  .slots { display: grid; grid-template-columns: repeat(6, 1fr); gap: var(--gap); }
+  .slot {
+    position: relative;
+    aspect-ratio: 1 / .92;
+    border: 2px solid var(--edge);
+    background: rgba(90, 66, 40, .12);
+    cursor: pointer;
+    padding: 0;
+    display: grid; place-items: center;
+    transition: background-color .12s ease;
+  }
+  .slot:hover { background: rgba(255, 248, 228, .3); }
+  .slot.selected { border-color: var(--gold); background: rgba(255, 244, 200, .45); box-shadow: inset 0 0 0 2px var(--gold); }
+  .slot[disabled] { cursor: default; }
+  .slot::after { /* the pedestal */
+    content: ""; position: absolute; left: 22%; right: 22%; bottom: 11%; height: 9%;
+    border-radius: 50%; background: radial-gradient(ellipse, rgba(59, 36, 20, .38), rgba(59, 36, 20, 0) 70%);
+  }
+  .slot { overflow: hidden; }
+  .slot img { position: absolute; z-index: 1; left: -14%; top: -22%; width: 128%; height: 128%; object-fit: contain; image-rendering: pixelated; pointer-events: none; }
+  .slot img.art { left: 8%; top: 2%; width: 84%; height: 84%; image-rendering: auto; }
+  .slot .initial { font-family: "Kalam", cursive; font-size: 30px; color: var(--dim); }
+  .names { display: grid; grid-template-columns: repeat(6, 1fr); gap: var(--gap); margin-top: 4px; }
+  .name { text-align: center; font-size: 15px; white-space: nowrap; overflow: visible; }
+  .name:nth-child(even) { margin-top: 18px; }
+  .name.selected { color: var(--gold); }
+
+  /* links: a separate bracket under each pair, chips on two alternating rows */
+  .links { position: relative; margin-top: 4px; height: 70px; --col: calc((100% - 5 * var(--gap)) / 6); }
+  .link {
+    position: absolute; top: 0;
+    left: calc(var(--col) * (var(--i) + .5) + var(--gap) * var(--i));
+    width: calc(var(--col) + var(--gap));
+    display: flex; flex-direction: column; align-items: center;
+  }
+  .link .bracket { width: 74%; height: 7px; border: 2px solid var(--edge); border-top: 0; }
+  .link .stem { width: 2px; background: var(--edge); height: 6px; }
+  .link:nth-child(even) .stem { height: 30px; }
+  .chip {
+    position: relative; z-index: 2;
+    padding: 2px 8px; border: 2px solid var(--edge); background: rgba(239, 226, 196, .55);
+    color: var(--faint); font-size: 15px; white-space: nowrap; cursor: help;
+  }
+  .chip.ok { border-color: var(--green); color: var(--green); background: rgba(58, 122, 26, .14); }
+  .chip.bad { border-color: var(--red); color: var(--red); background: rgba(176, 42, 42, .12); }
+  .tip {
+    position: absolute; top: calc(100% + 6px); left: 50%; transform: translateX(-50%);
+    width: max-content; max-width: 240px; z-index: 5;
+    padding: 6px 9px; background: #1C0F1E; color: #F2EEE6; font-size: 14px; line-height: 1.3;
+    box-shadow: 0 0 0 2px #3D1E6B; white-space: normal; text-align: left;
+    display: none;
+  }
+  .tip b { display: block; color: #fff; font-weight: 600; }
+  .chip:hover .tip, .chip:focus-visible .tip, .chip.open .tip { display: block; }
+
+  /* actions */
+  .actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 10px; min-height: 40px; }
+  .btn {
+    padding: 6px 16px; border: 2px solid var(--edge); background: #E8D8AF; cursor: pointer;
+    box-shadow: inset 0 -3px 0 rgba(110, 78, 38, .25);
+  }
+  .btn:hover { background: #F1E3BE; }
+  .btn:active { box-shadow: inset 0 2px 0 rgba(110, 78, 38, .25); }
+  .btn.primary { color: #2E6B1F; font-weight: 600; }
+  .btn.share { color: #1F2D80; font-weight: 600; }
+  .hint { color: var(--faint); }
+  .result { font-weight: 600; }
+  .result.won { color: var(--green); }
+  .result.lost { color: var(--red); }
+  .copied { color: var(--green); }
+
+  /* guesses and stats */
+  h2 {
+    font-family: "Kalam", cursive; font-weight: 700; font-size: 24px; margin: 22px 0 6px;
+    display: flex; align-items: center; gap: 10px;
+  }
+  h2::after { content: ""; flex: 1; height: 2px; background: rgba(122, 90, 54, .55); box-shadow: 0 1px 0 rgba(255, 246, 220, .4); }
+  .guesses { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px 24px; }
+  .guess { display: flex; align-items: center; gap: 8px; color: var(--faint); }
+  .guess .n { width: 1.2em; text-align: right; }
+  .sq { width: 14px; height: 14px; display: inline-block; }
+  .sq.ok { background: var(--green); }
+  .sq.bad { background: var(--red); }
+  .none { color: var(--dim); }
+  .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; text-align: center; }
+  .stat .num { font-family: "Kalam", cursive; font-size: 30px; line-height: 1.1; }
+  .stat .lbl { color: var(--faint); font-size: 14px; }
+  .dist { margin-top: 10px; display: grid; gap: 3px; }
+  .dist .row { display: grid; grid-template-columns: 1.6em 1fr; align-items: center; gap: 6px; font-size: 14px; color: var(--faint); }
+  .dist .bar { height: 14px; background: rgba(138, 106, 64, .45); min-width: 18px; color: #FFF6DC; font-size: 12px; text-align: right; padding-right: 4px; line-height: 14px; }
+  .dist .bar.today { background: var(--green); }
+  .footnote { color: var(--faint); margin-top: 8px; }
+  .code { font-weight: 600; color: var(--ink); letter-spacing: .06em; }
+
+  details { margin-top: 22px; }
+  summary { font-family: "Kalam", cursive; font-weight: 700; font-size: 22px; cursor: pointer; }
+  .rules { color: var(--ink); max-width: 64ch; }
+  .rules dt { font-weight: 600; margin-top: 6px; }
+  .rules dd { margin: 0 0 0 0; color: var(--faint); }
+  .colophon { text-align: center; color: #A9AEC0; font-size: 14px; margin-top: 18px; }
+  .colophon a { color: #D9C49B; }
+  .rules a { color: var(--gold); }
+  .notice { text-align: center; color: var(--faint); padding: 40px 0; }
+
+  /* ---------------------------------------------------------------- small screens */
+  @media (max-width: 640px) {
+    body { padding: 64px 8px 32px; font-size: 15px; }
+    :root { --gap: 5px; }
+    .book { padding-right: 0; }
+    .page { padding: 22px 12px 24px; }
+    h1 { font-size: 42px; }
+    .ribbons { flex-direction: row; top: -40px; right: 12px; }
+    .ribbon { writing-mode: horizontal-tb; width: auto; height: 40px; padding: 4px 14px 10px; align-items: flex-start;
+      clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 86%, 0 100%); transform: translateY(8px); font-size: 14px; }
+    .ribbon[aria-pressed="true"], .ribbon[aria-pressed="true"]:hover { transform: translateY(0); }
+    .ribbon:hover { transform: translateY(4px); }
+    .name { font-size: 11px; }
+    .name:nth-child(even) { margin-top: 13px; }
+    .chip { font-size: 11px; padding: 1px 4px; }
+    .links { height: 58px; }
+    .link:nth-child(even) .stem { height: 24px; }
+    .guesses { grid-template-columns: 1fr; }
+    .stat .num { font-size: 24px; }
+  }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+<main class="book">
+  <nav class="ribbons" aria-label="Puzzle">
+    <button class="ribbon today" data-mode="daily" aria-pressed="true">Today</button>
+    <button class="ribbon random" data-mode="random" aria-pressed="false">Random</button>
+  </nav>
+  <article class="page">
+    <h1>Dexle</h1>
+    <p class="tagline">Swap the Pokémon until every link between neighbours is true.</p>
+    <div id="game"><p class="notice">Opening today's puzzle…</p></div>
+    <details>
+      <summary>How to play</summary>
+      <div class="rules">
+        <p>Six Pokémon, five links. Each link sits under two neighbours and has to be true for that pair, reading left to right. Click a Pokémon, then click another to swap them. Submit when you think every link holds. Wrong guesses cost a life, and each guess shows which links were right.</p>
+        <dl>
+          <dt>Gen &lt; / = / &gt;</dt><dd>Compares the generations they were introduced in.</dd>
+          <dt>Stage &lt; / = / &gt;</dt><dd>Compares evolution stages. Babies count as the first stage, so Pichu is 1, Pikachu 2, and Raichu 3.</dd>
+          <dt>Beats &gt; / Beats &lt;</dt><dd>The Pokémon the arrow points away from has a type that's super effective against the other.</dd>
+          <dt>Type =</dt><dd>They share at least one type.</dd>
+          <dt>Egg =</dt><dd>They share an egg group.</dd>
+          <dt>Speed, HP, Attack, Defence, Sp. Atk, Sp. Def, Stat total</dt><dd>Compares that base stat.</dd>
+        </dl>
+        <p>Today's puzzle is the same one played on the Clem Cobblemon server, and it changes at midnight Pacific. Random puzzles are for extra practice: share the link and friends get the same one.</p>
+        <p>Dexle is inspired by the PokéSort puzzle on <a href="https://pokelike.xyz/">pokelike.xyz</a>. Go give it a try too!</p>
+      </div>
+    </details>
+  </article>
+  <p class="colophon">A fan puzzle for the Clem Cobblemon community, inspired by the PokéSort puzzle on <a href="https://pokelike.xyz/">Pokelike</a>. Sprites from <a href="https://github.com/PokeAPI/sprites">PokéAPI</a>; Pokémon belongs to Nintendo, Game Freak, and Creatures.</p>
+</main>
+
+<script src="dexle-core.js"></script>
+
+<script>
+(() => {
+  'use strict';
+  const C = window.DexleCore;
+  const SPRITES = [
+    dex => `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${dex}.png`,
+    dex => `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/${dex}.png`,
+  ];
+  // Puzzles from before the web version existed, copied from the server by hand. Stages use that day's rule.
+  const FIXED = {
+    '2026-11-22': {
+      answer: ['hitmonlee', 'chansey', 'bagon', 'blitzle', 'noctowl', 'sirfetchd'],
+      start: ['noctowl', 'bagon', 'sirfetchd', 'hitmonlee', 'blitzle', 'chansey'],
+      links: ['Beats >', 'Sp. Atk <', 'Stage =', 'Beats >', 'Egg ='],
+      stages: { hitmonlee: 1, chansey: 1 }, // babies didn't count yet
+    },
+  };
+  function fixedPuzzle(date) {
+    const f = FIXED[date];
+    if (!f) return null;
+    const mon = id => {
+      const m = BYID['cobblemon:' + id];
+      return m ? Object.assign({}, m, f.stages && f.stages[id] ? { stage: f.stages[id] } : {}) : null;
+    };
+    const answer = f.answer.map(mon);
+    if (answer.some(m => !m)) return null;
+    const byId = Object.fromEntries(answer.map(m => [m.id, m]));
+    return {
+      answer,
+      start: f.start.map(id => byId['cobblemon:' + id]),
+      links: f.links.map(label => C.LINKS.find(l => l.label === label)),
+      mons: byId,
+    };
+  }
+  const CODE_CHARS = 'ACDEFGHJKMNPQRTUVWXY34679'; // no look-alikes in a pixel font (S/5, Z/2, B/8, O/0, I/1/L)
+  const game = document.getElementById('game');
+  let POOL, BYID, CONFIG, view;
+
+  // ---------------------------------------------------------------- storage
+  const store = {
+    get(k, d) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch (e) { return d; } },
+    set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* private mode: play without saving */ } },
+  };
+
+  // ---------------------------------------------------------------- dates and codes
+  function todayIn(tz) {
+    return new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+  }
+  function dayNumber(dateStr) {
+    const a = Date.UTC(...CONFIG.rulesFrom.split('-').map((n, i) => i === 1 ? n - 1 : +n));
+    const b = Date.UTC(...dateStr.split('-').map((n, i) => i === 1 ? n - 1 : +n));
+    return Math.round((b - a) / 86400000) + 1;
+  }
+  function prettyDate(dateStr) {
+    const [y, m, d] = dateStr.split('-').map(Number);
+    return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString('en-US', { timeZone: 'UTC', weekday: 'short', month: 'short', day: 'numeric' });
+  }
+  function untilMidnight(tz) {
+    const now = new Date();
+    const parts = Object.fromEntries(new Intl.DateTimeFormat('en-US', { timeZone: tz, hour: 'numeric', minute: 'numeric', hourCycle: 'h23' })
+      .formatToParts(now).map(p => [p.type, p.value]));
+    const mins = 24 * 60 - (+parts.hour * 60 + +parts.minute);
+    return `${Math.floor(mins / 60)}h ${mins % 60}m`;
+  }
+  function newCode() {
+    let s = '';
+    const r = new Uint32Array(6);
+    crypto.getRandomValues(r);
+    for (const v of r) s += CODE_CHARS[v % CODE_CHARS.length];
+    return s;
+  }
+  function validCode(c) { return typeof c === 'string' && /^[A-Z0-9]{6}$/.test(c) && [...c].every(ch => CODE_CHARS.includes(ch)); }
+  function seedForCode(code) {
+    let v = 0n;
+    for (const ch of code) v = v * 31n + BigInt(CODE_CHARS.indexOf(ch));
+    return v * 1000003n + 17n; // far away from the daily seeds (epochDay * 31 + 7)
+  }
+  function shareUrl(code) {
+    const u = new URL(location.href);
+    u.search = code ? `?p=${code}` : '';
+    u.hash = '';
+    return u.toString();
+  }
+
+  // ---------------------------------------------------------------- puzzles
+  function load(mode, code) {
+    const lives = CONFIG.lives;
+    let key, seed, title;
+    if (mode === 'daily') {
+      const date = todayIn(CONFIG.timezone);
+      if (date < CONFIG.rulesFrom && !FIXED[date]) {
+        game.innerHTML = `<p class="notice">The first Dexle is on ${prettyDate(CONFIG.rulesFrom)}. Try a random puzzle until then.</p>`;
+        view = null;
+        return;
+      }
+      key = 'dexle:daily:' + date;
+      seed = C.seedFor(date);
+      title = `Dexle #${dayNumber(date)}`;
+      view = { mode, date, key, title };
+    } else {
+      key = 'dexle:random:' + code;
+      seed = seedForCode(code);
+      title = `Random puzzle ${code}`;
+      view = { mode, code, key, title };
+    }
+    const fixed = mode === 'daily' ? fixedPuzzle(view.date) : null;
+    const puzzle = fixed || C.daily(POOL, seed);
+    view.lookup = fixed ? fixed.mons : BYID;
+    let saved = store.get(key, null);
+    const ids = puzzle.answer.map(m => m.id);
+    if (!saved || !saved.order || saved.order.length !== 6 || !saved.order.every(id => ids.includes(id))) {
+      saved = { order: puzzle.start.map(m => m.id), guesses: [], lives, done: null };
+    }
+    Object.assign(view, { puzzle, state: saved, selected: -1, moved: false, copied: false });
+    render();
+  }
+
+  function save() { store.set(view.key, view.state); }
+
+  function submit() {
+    const s = view.state;
+    if (s.done) return;
+    const order = s.order.map(id => view.lookup[id]);
+    const res = C.check(view.puzzle, order);
+    s.guesses.push(res);
+    view.moved = false;
+    if (res.every(Boolean)) {
+      s.done = 'solved';
+      if (view.mode === 'daily') recordDaily(true, s.guesses.length);
+    } else if (--s.lives <= 0) {
+      s.done = 'failed';
+      s.order = view.puzzle.answer.map(m => m.id);
+      if (view.mode === 'daily') recordDaily(false, 0);
+    }
+    save();
+    render();
+  }
+
+  function recordDaily(won, guesses) {
+    const st = store.get('dexle:stats', { played: 0, solved: 0, streak: 0, best: 0, last: '', dist: [0, 0, 0, 0, 0, 0, 0, 0] });
+    if (st.lastPlayed === view.date) return;
+    st.lastPlayed = view.date;
+    st.played++;
+    if (won) {
+      st.solved++;
+      const y = new Date(Date.UTC(...view.date.split('-').map((n, i) => i === 1 ? n - 1 : +n)) - 86400000).toISOString().slice(0, 10);
+      st.streak = st.last === y ? st.streak + 1 : 1;
+      st.best = Math.max(st.best, st.streak);
+      st.last = view.date;
+      st.dist[guesses - 1] = (st.dist[guesses - 1] || 0) + 1;
+    } else {
+      st.streak = 0;
+    }
+    store.set('dexle:stats', st);
+  }
+
+  function shareText() {
+    const s = view.state;
+    const score = s.done === 'solved' ? `${s.guesses.length}/${CONFIG.lives}` : `X/${CONFIG.lives}`;
+    const head = view.mode === 'daily' ? `${view.title} (${prettyDate(view.date)}) ${score}` : `Dexle ${view.title.toLowerCase()} ${score}`;
+    const rows = s.guesses.map(g => g.map(b => (b ? '🟩' : '🟥')).join('')).join('\n');
+    const link = view.mode === 'daily' ? shareUrl(null) : shareUrl(view.code);
+    return `${head}\n${rows}\n${view.mode === 'daily' ? 'Play today\'s Dexle' : 'Try this puzzle'}: ${link}`;
+  }
+
+  async function copyResult() {
+    const text = shareText();
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch (e) {
+      const ta = document.createElement('textarea');
+      ta.value = text; document.body.appendChild(ta); ta.select();
+      try { document.execCommand('copy'); } catch (e2) { /* nothing else to try */ }
+      ta.remove();
+    }
+    view.copied = true;
+    render();
+  }
+
+  // ---------------------------------------------------------------- drawing
+  const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+  function render() {
+    const { puzzle, state: s } = view;
+    const done = !!s.done;
+    const last = s.guesses.length ? s.guesses[s.guesses.length - 1] : null;
+    const showResult = done || (last && !view.moved);
+    const mons = s.order.map(id => view.lookup[id]);
+
+    let h = '';
+    h += `<div class="status"><div><span class="which">${esc(view.title)}</span>`;
+    h += view.mode === 'daily' ? ` <span class="lives-text">${esc(prettyDate(view.date))}</span>` : '';
+    h += `</div><div class="lives" aria-label="${s.lives} of ${CONFIG.lives} lives left">`;
+    for (let i = 0; i < CONFIG.lives; i++) h += `<span class="life${i < s.lives ? '' : ' spent'}"></span>`;
+    h += `</div></div>`;
+
+    h += `<div class="board"><div class="slots">`;
+    mons.forEach((m, i) => {
+      h += `<button class="slot${view.selected === i ? ' selected' : ''}" data-slot="${i}" ${done ? 'disabled' : ''} aria-label="${esc(m.name)}${view.selected === i ? ', picked up' : ''}">`;
+      h += `<img alt="" data-dex="${m.dex}" data-try="0" src="${SPRITES[0](m.dex)}"></button>`;
+    });
+    h += `</div><div class="names" aria-hidden="true">`;
+    mons.forEach((m, i) => { h += `<div class="name${view.selected === i ? ' selected' : ''}">${esc(m.name)}</div>`; });
+    h += `</div><div class="links">`;
+    puzzle.links.forEach((l, i) => {
+      const ok = done && s.done === 'solved' ? true : done ? true : showResult ? last[i] : null;
+      const cls = ok === null ? '' : ok ? ' ok' : ' bad';
+      let desc = l.desc.replace('The left one', 'The left Pokémon').replace('The right one', 'The right Pokémon');
+      if (view.lookup !== BYID) desc = desc.replace('(babies count as the first stage)', "(babies don't count in this puzzle)");
+      h += `<div class="link" style="--i:${i}"><div class="bracket"></div><div class="stem"></div>`;
+      h += `<button class="chip${cls}" type="button" aria-label="${esc(l.label)}: ${esc(desc)}">${esc(l.label)}<span class="tip" role="tooltip"><b>${esc(l.label)}</b>${esc(desc)}</span></button></div>`;
+    });
+    h += `</div></div>`;
+
+    h += `<div class="actions">`;
+    if (!done) {
+      h += `<button class="btn primary" data-act="submit">Submit</button>`;
+      h += `<button class="btn" data-act="shuffle">Shuffle</button>`;
+      const hint = view.selected >= 0 ? 'Now click another to swap.' : view.moved ? 'Submit when every link looks right.' : s.guesses.length ? 'Change the order and try again.' : 'Click two Pokémon to swap them.';
+      h += `<span class="hint">${hint}</span>`;
+    } else {
+      h += s.done === 'solved'
+        ? `<span class="result won">Solved in ${s.guesses.length} ${s.guesses.length === 1 ? 'guess' : 'guesses'}!</span>`
+        : `<span class="result lost">Out of lives. Here's the answer.</span>`;
+      h += `<button class="btn share" data-act="copy">${view.copied ? 'Copied!' : 'Copy result'}</button>`;
+      if (view.mode === 'random') h += `<button class="btn" data-act="random">New random puzzle</button>`;
+    }
+    h += `</div>`;
+
+    h += `<h2>Your guesses</h2>`;
+    if (!s.guesses.length) h += `<p class="none">None yet.</p>`;
+    else {
+      h += `<div class="guesses">`;
+      s.guesses.forEach((g, k) => {
+        h += `<div class="guess"><span class="n">${k + 1}</span><span>${g.map(b => `<span class="sq ${b ? 'ok' : 'bad'}"></span>`).join(' ')}</span><span>${g.filter(Boolean).length} of ${g.length} right</span></div>`;
+      });
+      h += `</div>`;
+    }
+
+    if (view.mode === 'daily') {
+      const st = store.get('dexle:stats', null);
+      if (st && st.played) {
+        h += `<h2>Your record</h2><div class="stats">`;
+        h += `<div class="stat"><div class="num">${st.played}</div><div class="lbl">Played</div></div>`;
+        h += `<div class="stat"><div class="num">${Math.round(100 * st.solved / st.played)}%</div><div class="lbl">Solved</div></div>`;
+        h += `<div class="stat"><div class="num">${st.streak}</div><div class="lbl">Streak</div></div>`;
+        h += `<div class="stat"><div class="num">${st.best}</div><div class="lbl">Best streak</div></div></div>`;
+        const max = Math.max(1, ...st.dist.slice(0, CONFIG.lives));
+        h += `<div class="dist" aria-label="Guesses needed">`;
+        for (let i = 0; i < CONFIG.lives; i++) {
+          const n = st.dist[i] || 0, mine = s.done === 'solved' && s.guesses.length === i + 1;
+          h += `<div class="row"><span>${i + 1}</span><div class="bar${mine ? ' today' : ''}" style="width:${Math.max(4, 100 * n / max)}%">${n}</div></div>`;
+        }
+        h += `</div>`;
+      }
+      h += `<p class="footnote">A new puzzle in ${untilMidnight(CONFIG.timezone)}. Want more today? Open the Random ribbon.</p>`;
+    } else {
+      h += `<p class="footnote">Puzzle code <span class="code">${esc(view.code)}</span>. Anyone with the link gets this exact puzzle. Random puzzles don't count toward your daily streak.</p>`;
+    }
+
+    game.innerHTML = h;
+    game.querySelectorAll('img[data-dex]').forEach(img => img.addEventListener('error', spriteFallback));
+  }
+
+  function spriteFallback(e) {
+    const img = e.target;
+    const next = +img.dataset.try + 1;
+    if (next < SPRITES.length) {
+      img.dataset.try = next;
+      img.src = SPRITES[next](img.dataset.dex);
+      img.classList.add('art');
+    } else {
+      const slot = img.parentElement;
+      const name = slot.getAttribute('aria-label') || '?';
+      img.replaceWith(Object.assign(document.createElement('span'), { className: 'initial', textContent: name[0] }));
+    }
+  }
+
+  // ---------------------------------------------------------------- input
+  game.addEventListener('click', e => {
+    const chip = e.target.closest('.chip');
+    if (chip) {
+      const open = chip.classList.contains('open');
+      game.querySelectorAll('.chip.open').forEach(c => c.classList.remove('open'));
+      if (!open) chip.classList.add('open');
+      return;
+    }
+    const slot = e.target.closest('.slot');
+    if (slot && !view.state.done) {
+      const i = +slot.dataset.slot;
+      if (view.selected < 0) view.selected = i;
+      else if (view.selected === i) view.selected = -1;
+      else {
+        const o = view.state.order;
+        [o[view.selected], o[i]] = [o[i], o[view.selected]];
+        view.selected = -1;
+        view.moved = true;
+        save();
+      }
+      render();
+      const again = game.querySelector(`.slot[data-slot="${i}"]`);
+      if (again) again.focus();
+      return;
+    }
+    const act = e.target.closest('[data-act]');
+    if (!act) return;
+    const a = act.dataset.act;
+    if (a === 'submit') submit();
+    else if (a === 'shuffle') {
+      const o = view.state.order;
+      for (let i = o.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [o[i], o[j]] = [o[j], o[i]]; }
+      view.selected = -1; view.moved = true; save(); render();
+    } else if (a === 'copy') copyResult();
+    else if (a === 'random') openRandom(newCode());
+  });
+
+  document.querySelectorAll('.ribbon').forEach(r => r.addEventListener('click', () => {
+    if (r.dataset.mode === 'daily') openDaily();
+    else openRandom(store.get('dexle:lastRandom', null) || newCode());
+  }));
+
+  function setRibbon(mode) {
+    document.querySelectorAll('.ribbon').forEach(r => r.setAttribute('aria-pressed', String(r.dataset.mode === mode)));
+  }
+  function openDaily() {
+    history.replaceState(null, '', shareUrl(null));
+    setRibbon('daily');
+    load('daily');
+  }
+  function openRandom(code) {
+    store.set('dexle:lastRandom', code);
+    history.replaceState(null, '', shareUrl(code));
+    setRibbon('random');
+    load('random', code);
+  }
+
+  // ---------------------------------------------------------------- start
+  async function start() {
+    try {
+      const raw = window.DEXLE_POOL || await (await fetch('dexle_pool.json', { cache: 'no-cache' })).json();
+      CONFIG = { rulesFrom: raw.rulesFrom || '2026-11-23', timezone: raw.timezone || 'America/Los_Angeles', lives: raw.lives || 4 };
+      POOL = raw.mons.map(C.monFrom);
+      BYID = Object.fromEntries(POOL.map(m => [m.id, m]));
+    } catch (e) {
+      game.innerHTML = `<p class="notice">Dexle couldn't load its Pokémon list (dexle_pool.json). Check that the file sits next to this page.</p>`;
+      return;
+    }
+    const code = new URLSearchParams(location.search).get('p');
+    if (code && validCode(code.toUpperCase())) openRandom(code.toUpperCase());
+    else openDaily();
+  }
+  start();
+})();
+</script>
+</body>
+</html>
