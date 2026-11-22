@@ -337,7 +337,7 @@
   };
   // animated sprites by default, unless the player turned them off or their system asks for less motion
   // daily tally: a small Cloudflare Worker counts finished daily puzzles (see stats-worker/). Empty = no tally.
-  const STATS_URL = '';
+  const STATS_URL = 'https://dexle-stats.kaelryn-silverleaf.workers.dev';
   function clientId() {
     let id = store.get('dexle:client', null);
     if (!id) {
