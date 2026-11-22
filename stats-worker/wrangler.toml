@@ -1,0 +1,14 @@
+name = "dexle-stats"
+main = "worker.js"
+compatibility_date = "2026-11-01"
+
+[vars]
+ALLOWED_ORIGINS = "https://rukicodebold.github.io"
+TIMEZONE = "America/Los_Angeles"
+LIVES = "4"
+PER_IP_PER_DAY = "6"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "dexle-stats"
+database_id = "REPLACE_WITH_YOUR_DATABASE_ID"

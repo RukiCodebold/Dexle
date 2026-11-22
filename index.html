@@ -88,6 +88,7 @@
   }
   .ribbon.today { background: #C8962E; }
   .ribbon.random { background: #2E6F8A; }
+  .ribbon.archive { background: #6E4A72; }
   .ribbon[aria-pressed="true"] { transform: translateX(0); }
   .ribbon:hover { transform: translateX(-4px); }
   .ribbon[aria-pressed="true"]:hover { transform: translateX(0); }
@@ -207,6 +208,21 @@
   .dist .bar { height: 14px; background: rgba(138, 106, 64, .45); min-width: 18px; color: #FFF6DC; font-size: 12px; text-align: right; padding-right: 4px; line-height: 14px; }
   .dist .bar.today { background: var(--green); }
   .footnote { color: var(--faint); margin-top: 8px; }
+  .tally { color: var(--dim); margin: 10px 0 0; }
+  .tally strong { color: inherit; font-weight: 600; }
+  /* archive: one row per past day */
+  .archive-list { list-style: none; margin: 6px 0 0; padding: 0; }
+  .archive-list button { display: grid; grid-template-columns: 7.5em 1fr auto; align-items: baseline; gap: 12px; width: 100%; text-align: left;
+    font: inherit; color: inherit; background: none; border: 0; border-bottom: 1px dashed rgba(90, 66, 40, .35); padding: 9px 6px; cursor: pointer; }
+  .archive-list button:hover { background: rgba(255, 248, 228, .35); }
+  .archive-list button:focus-visible { outline: 2px solid var(--gold); outline-offset: 1px; }
+  .archive-list .num { font-weight: 600; }
+  .archive-list .when { color: var(--faint); }
+  .archive-list .how { color: var(--faint); }
+  .archive-list .how.won { color: var(--green); }
+  .archive-list .how.lost { color: var(--red); }
+  .archive-list .how.going { color: var(--gold); }
+  .back { font: inherit; font-size: 14px; color: var(--faint); background: none; border: 0; padding: 0; margin: 0 0 8px; cursor: pointer; text-decoration: underline dotted; text-underline-offset: 3px; }
   .code { font-weight: 600; color: var(--ink); letter-spacing: .06em; }
 
   details { margin-top: 22px; }
@@ -247,6 +263,7 @@
   <nav class="ribbons" aria-label="Puzzle">
     <button class="ribbon today" data-mode="daily" aria-pressed="true">Today</button>
     <button class="ribbon random" data-mode="random" aria-pressed="false">Random</button>
+    <button class="ribbon archive" data-mode="archive" aria-pressed="false">Archive</button>
   </nav>
   <article class="page">
     <h1>Dexle</h1>
@@ -319,6 +336,50 @@
     set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* private mode: play without saving */ } },
   };
   // animated sprites by default, unless the player turned them off or their system asks for less motion
+  // daily tally: a small Cloudflare Worker counts finished daily puzzles (see stats-worker/). Empty = no tally.
+  const STATS_URL = '';
+  function clientId() {
+    let id = store.get('dexle:client', null);
+    if (!id) {
+      const r = new Uint32Array(4); crypto.getRandomValues(r);
+      id = [...r].map(v => v.toString(36)).join('').slice(0, 24);
+      store.set('dexle:client', id);
+    }
+    return id;
+  }
+  const tallies = {}; // date -> stats from the Worker
+  function fetchTally(date, force) {
+    if (!STATS_URL || (!force && tallies[date])) return;
+    fetch(`${STATS_URL}/stats?day=${date}`, { cache: force ? 'no-cache' : 'default' }).then(r => r.ok ? r.json() : null).then(t => {
+      if (!t) return;
+      tallies[date] = t;
+      if (view && view.mode === 'daily' && view.date === date) render();
+    }).catch(() => {});
+  }
+  function sendResult() {
+    const s = view.state;
+    if (!STATS_URL || view.past || !s.done || s.sent) return;
+    const body = { day: view.date, client: clientId(), solved: s.done === 'solved', guesses: s.done === 'solved' ? s.guesses.length : CONFIG.lives };
+    const key = view.key, date = view.date;
+    fetch(`${STATS_URL}/result`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).then(r => {
+      if (r.status >= 500) return; // try again next visit
+      const saved = store.get(key, null);
+      if (saved) { saved.sent = true; store.set(key, saved); }
+      if (view && view.key === key) view.state.sent = true;
+      fetchTally(date, true);
+    }).catch(() => {});
+  }
+  function tallyLine() {
+    const t = tallies[view.date];
+    if (!t) return '';
+    const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+    if (!t.players) return view.past ? '' : `<p class="tally">No one has finished today's puzzle yet.</p>`;
+    const rate = Math.round(100 * t.solved / t.players);
+    const avg = t.average != null ? `, taking <strong>${t.average.toFixed(1)}</strong> guesses on average` : '';
+    const who = view.past ? `On the day, <strong>${plural(t.players, 'player', 'players')}</strong> finished it.` : `<strong>${plural(t.players, 'player has', 'players have')}</strong> finished today's puzzle.`;
+    return `<p class="tally">${who} <strong>${rate}%</strong> solved it${avg}.</p>`;
+  }
+
   const STYLES = [['animated', 'Animated'], ['static', 'Static'], ['portrait', 'Portraits']];
   let spriteStyle = store.get('dexle:sprites', null);
   if (!STYLES.some(([k]) => k === spriteStyle)) {
@@ -367,6 +428,12 @@
     for (const ch of code) v = v * 31n + BigInt(CODE_CHARS.indexOf(ch));
     return v * 1000003n + 17n; // far away from the daily seeds (epochDay * 31 + 7)
   }
+  function dayUrl(date) {
+    const u = new URL(location.href);
+    u.search = `?d=${date}`;
+    u.hash = '';
+    return u.toString();
+  }
   function shareUrl(code) {
     const u = new URL(location.href);
     u.search = code ? `?p=${code}` : '';
@@ -375,11 +442,17 @@
   }
 
   // ---------------------------------------------------------------- puzzles
-  function load(mode, code) {
+  function firstDay() { return Object.keys(FIXED).concat(CONFIG.rulesFrom).sort()[0]; }
+  function shiftDay(dateStr, n) {
+    const [y, m, d] = dateStr.split('-').map(Number);
+    return new Date(Date.UTC(y, m - 1, d) + n * 86400000).toISOString().slice(0, 10);
+  }
+  function load(mode, code, when) {
     const lives = CONFIG.lives;
     let key, seed, title;
     if (mode === 'daily') {
-      const date = todayIn(CONFIG.timezone);
+      const today = todayIn(CONFIG.timezone);
+      const date = when && when < today && when >= firstDay() ? when : today;
       if (date < CONFIG.rulesFrom && !FIXED[date]) {
         game.innerHTML = `<p class="notice">The first Dexle is on ${prettyDate(CONFIG.rulesFrom)}. Try a random puzzle until then.</p>`;
         view = null;
@@ -388,7 +461,7 @@
       key = 'dexle:daily:' + date;
       seed = C.seedFor(date);
       title = `Dexle #${dayNumber(date)}`;
-      view = { mode, date, key, title };
+      view = { mode, date, key, title, past: date !== today };
     } else {
       key = 'dexle:random:' + code;
       seed = seedForCode(code);
@@ -405,6 +478,7 @@
     }
     Object.assign(view, { puzzle, state: saved, selected: -1, moved: false, copied: false });
     render();
+    if (mode === 'daily') { fetchTally(view.date); sendResult(); }
   }
 
   function save() { store.set(view.key, view.state); }
@@ -418,14 +492,15 @@
     view.moved = false;
     if (res.every(Boolean)) {
       s.done = 'solved';
-      if (view.mode === 'daily') recordDaily(true, s.guesses.length);
+      if (view.mode === 'daily' && !view.past) recordDaily(true, s.guesses.length);
     } else if (--s.lives <= 0) {
       s.done = 'failed';
       s.order = view.puzzle.answer.map(m => m.id);
-      if (view.mode === 'daily') recordDaily(false, 0);
+      if (view.mode === 'daily' && !view.past) recordDaily(false, 0);
     }
     save();
     render();
+    if (s.done && view.mode === 'daily') sendResult();
   }
 
   function recordDaily(won, guesses) {
@@ -451,8 +526,9 @@
     const score = s.done === 'solved' ? `${s.guesses.length}/${CONFIG.lives}` : `X/${CONFIG.lives}`;
     const head = view.mode === 'daily' ? `${view.title} (${prettyDate(view.date)}) ${score}` : `Dexle ${view.title.toLowerCase()} ${score}`;
     const rows = s.guesses.map(g => g.map(b => (b ? '🟩' : '🟥')).join('')).join('\n');
-    const link = view.mode === 'daily' ? shareUrl(null) : shareUrl(view.code);
-    return `${head}\n${rows}\n${view.mode === 'daily' ? 'Play today\'s Dexle' : 'Try this puzzle'}: ${link}`;
+    const link = view.mode === 'daily' ? (view.past ? dayUrl(view.date) : shareUrl(null)) : shareUrl(view.code);
+    const invite = view.mode !== 'daily' ? 'Try this puzzle' : view.past ? 'Play this Dexle' : 'Play today\'s Dexle';
+    return `${head}\n${rows}\n${invite}: ${link}`;
   }
 
   async function copyResult() {
@@ -480,6 +556,7 @@
     const mons = s.order.map(id => view.lookup[id]);
 
     let h = '';
+    if (view.past) h += `<button class="back" data-act="archive">Back to the archive</button>`;
     h += `<div class="status"><div><span class="which">${esc(view.title)}</span>`;
     h += view.mode === 'daily' ? ` <span class="lives-text">${esc(prettyDate(view.date))}</span>` : '';
     h += `</div><div class="right"><div class="sprite-style" role="group" aria-label="Sprite style">${STYLES.map(([k, label]) => `<button type="button" data-style="${k}" aria-pressed="${spriteStyle === k}">${label}</button>`).join('')}</div><div class="lives" aria-label="${s.lives} of ${CONFIG.lives} lives left">`;
@@ -518,6 +595,7 @@
       if (view.mode === 'random') h += `<button class="btn" data-act="random">New random puzzle</button>`;
     }
     h += `</div>`;
+    if (view.mode === 'daily') h += tallyLine();
 
     h += `<h2>Your guesses</h2>`;
     if (!s.guesses.length) h += `<p class="none">None yet.</p>`;
@@ -529,7 +607,9 @@
       h += `</div>`;
     }
 
-    if (view.mode === 'daily') {
+    if (view.mode === 'daily' && view.past) {
+      h += `<p class="footnote">Archive puzzles don't count toward your streak or the daily tally.</p>`;
+    } else if (view.mode === 'daily') {
       const st = store.get('dexle:stats', null);
       if (st && st.played) {
         h += `<h2>Your record</h2><div class="stats">`;
@@ -726,10 +806,13 @@
       view.selected = -1; view.moved = true; save(); render();
     } else if (a === 'copy') copyResult();
     else if (a === 'random') openRandom(newCode());
+    else if (a === 'archive') openArchive();
+    else if (a === 'day') openDay(act.dataset.date);
   });
 
   document.querySelectorAll('.ribbon').forEach(r => r.addEventListener('click', () => {
     if (r.dataset.mode === 'daily') openDaily();
+    else if (r.dataset.mode === 'archive') openArchive();
     else openRandom(store.get('dexle:lastRandom', null) || newCode());
   }));
 
@@ -740,6 +823,35 @@
     history.replaceState(null, '', shareUrl(null));
     setRibbon('daily');
     load('daily');
+  }
+  function openDay(date) {
+    history.replaceState(null, '', dayUrl(date));
+    setRibbon('archive');
+    load('daily', null, date);
+  }
+  function openArchive() {
+    history.replaceState(null, '', shareUrl(null));
+    setRibbon('archive');
+    view = null;
+    const today = todayIn(CONFIG.timezone);
+    let h = `<div class="status"><div><span class="which">Archive</span></div></div>`;
+    const days = [];
+    for (let d = shiftDay(today, -1); d >= firstDay(); d = shiftDay(d, -1)) days.push(d);
+    if (!days.length) {
+      h += `<p class="notice">Missed puzzles collect here. The first one arrives tomorrow, once today's puzzle is over.</p>`;
+    } else {
+      h += `<p class="footnote" style="margin-top:0">Catch up on daily puzzles you missed. They don't count toward your streak.</p><ul class="archive-list">`;
+      for (const d of days) {
+        const st = store.get('dexle:daily:' + d, null);
+        let how = '<span class="how">Not played</span>';
+        if (st && st.done === 'solved') how = `<span class="how won">Solved in ${st.guesses.length}</span>`;
+        else if (st && st.done === 'failed') how = '<span class="how lost">Missed it</span>';
+        else if (st && st.guesses && st.guesses.length) how = '<span class="how going">In progress</span>';
+        h += `<li><button data-act="day" data-date="${d}"><span class="num">Dexle #${dayNumber(d)}</span><span class="when">${esc(prettyDate(d))}</span>${how}</button></li>`;
+      }
+      h += `</ul>`;
+    }
+    game.innerHTML = h;
   }
   function openRandom(code) {
     store.set('dexle:lastRandom', code);
@@ -759,8 +871,9 @@
       game.innerHTML = `<p class="notice">Dexle couldn't load its Pokémon list (dexle_pool.json). Check that the file sits next to this page.</p>`;
       return;
     }
-    const code = new URLSearchParams(location.search).get('p');
+    const q = new URLSearchParams(location.search), code = q.get('p'), day = q.get('d');
     if (code && validCode(code.toUpperCase())) openRandom(code.toUpperCase());
+    else if (day && /^\d{4}-\d{2}-\d{2}$/.test(day) && day < todayIn(CONFIG.timezone) && day >= firstDay()) openDay(day);
     else openDaily();
   }
   start();
