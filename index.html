@@ -101,7 +101,7 @@
   .slots { display: grid; grid-template-columns: repeat(6, 1fr); gap: var(--gap); }
   .slot {
     position: relative;
-    aspect-ratio: 1 / .92;
+    aspect-ratio: 1 / 1.18;
     border: 2px solid var(--edge);
     background: rgba(90, 66, 40, .12);
     cursor: pointer;
@@ -112,13 +112,15 @@
   .slot:hover { background: rgba(255, 248, 228, .3); }
   .slot.selected { border-color: var(--gold); background: rgba(255, 244, 200, .45); box-shadow: inset 0 0 0 2px var(--gold); }
   .slot[disabled] { cursor: default; }
-  .slot::after { /* the pedestal */
-    content: ""; position: absolute; left: 22%; right: 22%; bottom: 11%; height: 9%;
+  .slot::after { /* the pedestal; sprites stand on its middle (bottom 14%) */
+    content: ""; position: absolute; left: 20%; right: 20%; bottom: 10%; height: 8%;
     border-radius: 50%; background: radial-gradient(ellipse, rgba(59, 36, 20, .38), rgba(59, 36, 20, 0) 70%);
   }
   .slot { overflow: hidden; }
-  .slot img { position: absolute; z-index: 1; left: -14%; top: -22%; width: 128%; height: 128%; object-fit: contain; image-rendering: pixelated; pointer-events: none; }
-  .slot img.art { left: 8%; top: 2%; width: 84%; height: 84%; image-rendering: auto; }
+  /* sprites are trimmed to their visible pixels, then stood on the pedestal: bottom edge at its middle */
+  .slot img { position: absolute; z-index: 1; left: 50%; bottom: 14%; transform: translateX(-50%); image-rendering: pixelated; pointer-events: none; visibility: hidden; }
+  .slot img.ready { visibility: visible; }
+  .slot img.art { image-rendering: auto; }
   .slot .initial { font-family: "Kalam", cursive; font-size: 30px; color: var(--dim); }
   .names { display: grid; grid-template-columns: repeat(6, 1fr); gap: var(--gap); margin-top: 4px; }
   .name { text-align: center; font-size: 15px; white-space: nowrap; overflow: visible; }
@@ -456,7 +458,7 @@
     h += `<div class="board"><div class="slots">`;
     mons.forEach((m, i) => {
       h += `<button class="slot${view.selected === i ? ' selected' : ''}" data-slot="${i}" ${done ? 'disabled' : ''} aria-label="${esc(m.name)}${view.selected === i ? ', picked up' : ''}">`;
-      h += `<img alt="" data-dex="${m.dex}" data-try="0" src="${SPRITES[0](m.dex)}"></button>`;
+      h += `<img alt="" crossorigin="anonymous" data-dex="${m.dex}" data-try="0" src="${SPRITES[0](m.dex)}"></button>`;
     });
     h += `</div><div class="names" aria-hidden="true">`;
     mons.forEach((m, i) => { h += `<div class="name${view.selected === i ? ' selected' : ''}">${esc(m.name)}</div>`; });
@@ -518,16 +520,67 @@
     }
 
     game.innerHTML = h;
-    game.querySelectorAll('img[data-dex]').forEach(img => img.addEventListener('error', spriteFallback));
+    game.querySelectorAll('img[data-dex]').forEach(img => {
+      img.addEventListener('error', spriteFallback);
+      img.addEventListener('load', onSprite);
+      if (img.complete && img.naturalWidth) onSprite({ target: img });
+    });
   }
+
+  // ---------------------------------------------------------------- sprites: trim to visible pixels, stand on the pedestal
+  const trimmed = new Map(); // src -> { url, w, h, art }
+  function trim(img) {
+    const c = document.createElement('canvas');
+    c.width = img.naturalWidth; c.height = img.naturalHeight;
+    const g = c.getContext('2d');
+    g.drawImage(img, 0, 0);
+    const d = g.getImageData(0, 0, c.width, c.height).data;
+    let x0 = c.width, y0 = c.height, x1 = -1, y1 = -1;
+    for (let y = 0; y < c.height; y++) for (let x = 0; x < c.width; x++) {
+      if (d[(y * c.width + x) * 4 + 3] > 16) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+    }
+    if (x1 < 0) return null;
+    const w = x1 - x0 + 1, h = y1 - y0 + 1, o = document.createElement('canvas');
+    o.width = w; o.height = h;
+    o.getContext('2d').drawImage(c, x0, y0, w, h, 0, 0, w, h);
+    return { url: o.toDataURL(), w, h, native: c.width };
+  }
+  function place(img, t) {
+    const slot = img.parentElement;
+    if (!slot) return;
+    const sw = slot.clientWidth, sh = slot.clientHeight;
+    // pixel sprites: one sprite pixel = a fixed share of the slot, so sizes stay true to each other
+    let k = img.classList.contains('art') ? (sw * 0.78) / t.native : (sw * 1.25) / t.native;
+    const maxH = sh * 0.80, maxW = sw * 0.94;
+    if (t.h * k > maxH) k = maxH / t.h;
+    if (t.w * k > maxW) k = maxW / t.w;
+    img.style.width = Math.round(t.w * k) + 'px';
+    img.style.height = Math.round(t.h * k) + 'px';
+    img.classList.add('ready');
+  }
+  function onSprite(e) {
+    const img = e.target;
+    if (img.dataset.trimmed) { place(img, trimmed.get(img.dataset.trimmed)); return; }
+    let t = trimmed.get(img.src);
+    if (!t) {
+      try { t = trim(img); } catch (err) { t = null; } // a host without CORS: show it untrimmed
+      if (!t) { img.style.width = '90%'; img.classList.add('ready'); return; }
+      trimmed.set(img.src, t);
+    }
+    img.dataset.trimmed = img.src;
+    img.src = t.url; // the load event fires again for the trimmed copy and places it
+  }
+  window.addEventListener('resize', () => {
+    document.querySelectorAll('.slot img.ready[data-trimmed]').forEach(img => place(img, trimmed.get(img.dataset.trimmed)));
+  });
 
   function spriteFallback(e) {
     const img = e.target;
     const next = +img.dataset.try + 1;
     if (next < SPRITES.length) {
       img.dataset.try = next;
-      img.src = SPRITES[next](img.dataset.dex);
       img.classList.add('art');
+      img.src = SPRITES[next](img.dataset.dex);
     } else {
       const slot = img.parentElement;
       const name = slot.getAttribute('aria-label') || '?';
