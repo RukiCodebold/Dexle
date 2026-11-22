@@ -97,6 +97,10 @@
   .status .which { font-weight: 600; }
   .status .lives-text { color: var(--faint); margin-left: 8px; }
   .lives { display: flex; gap: 4px; }
+  .status .right { display: flex; align-items: center; gap: 14px; }
+  .anim-toggle { font: inherit; font-size: 13px; color: var(--faint); background: none; border: 0; padding: 2px 0; cursor: pointer; text-decoration: underline dotted; text-underline-offset: 3px; }
+  .anim-toggle:hover { color: var(--ink, inherit); }
+  .anim-toggle:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
   .life { width: 13px; height: 13px; background: #B04A2A; box-shadow: inset 0 0 0 2px #5A2A1A; }
   .life.spent { background: rgba(147, 121, 90, .25); box-shadow: inset 0 0 0 2px rgba(147, 121, 90, .5); }
 
@@ -268,6 +272,7 @@
   'use strict';
   const C = window.DexleCore;
   const SPRITES = [
+    dex => `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/showdown/${dex}.gif`,
     dex => `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${dex}.png`,
     dex => `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/${dex}.png`,
   ];
@@ -306,6 +311,9 @@
     get(k, d) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch (e) { return d; } },
     set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* private mode: play without saving */ } },
   };
+  // animated sprites by default, unless the player turned them off or their system asks for less motion
+  let animOn = store.get('dexle:animate', !matchMedia('(prefers-reduced-motion: reduce)').matches);
+
 
   // ---------------------------------------------------------------- dates and codes
   function todayIn(tz) {
@@ -455,14 +463,14 @@
     let h = '';
     h += `<div class="status"><div><span class="which">${esc(view.title)}</span>`;
     h += view.mode === 'daily' ? ` <span class="lives-text">${esc(prettyDate(view.date))}</span>` : '';
-    h += `</div><div class="lives" aria-label="${s.lives} of ${CONFIG.lives} lives left">`;
+    h += `</div><div class="right"><button class="anim-toggle" type="button" aria-pressed="${animOn}">Animation: ${animOn ? 'on' : 'off'}</button><div class="lives" aria-label="${s.lives} of ${CONFIG.lives} lives left">`;
     for (let i = 0; i < CONFIG.lives; i++) h += `<span class="life${i < s.lives ? '' : ' spent'}"></span>`;
-    h += `</div></div>`;
+    h += `</div></div></div>`;
 
     h += `<div class="board"><div class="slots">`;
     mons.forEach((m, i) => {
       h += `<button class="slot${view.selected === i ? ' selected' : ''}" data-slot="${i}" ${done ? 'disabled' : ''} aria-label="${esc(m.name)}${view.selected === i ? ', picked up' : ''}">`;
-      h += `<img alt="" crossorigin="anonymous" data-dex="${m.dex}" data-try="0" src="${SPRITES[0](m.dex)}"></button>`;
+      h += `<img alt="" crossorigin="anonymous" data-dex="${m.dex}" data-try="${animOn ? 0 : 1}" src="${SPRITES[animOn ? 0 : 1](m.dex)}"></button>`;
     });
     h += `</div><div class="names" aria-hidden="true">`;
     mons.forEach((m, i) => { h += `<div class="name${view.selected === i ? ' selected' : ''}">${esc(m.name)}</div>`; });
@@ -562,8 +570,49 @@
     img.style.height = Math.round(t.h * k) + 'px';
     img.classList.add('ready');
   }
+  // animated sprites: measure the first frame's visible pixels, then position the whole GIF so it keeps moving
+  const bounds = new Map(); // src -> { x0, y0, x1, y1, nw, nh }
+  function measure(img) {
+    const c = document.createElement('canvas');
+    c.width = img.naturalWidth; c.height = img.naturalHeight;
+    const g = c.getContext('2d');
+    g.drawImage(img, 0, 0);
+    const d = g.getImageData(0, 0, c.width, c.height).data;
+    let x0 = c.width, y0 = c.height, x1 = -1, y1 = -1;
+    for (let y = 0; y < c.height; y++) for (let x = 0; x < c.width; x++) {
+      if (d[(y * c.width + x) * 4 + 3] > 16) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+    }
+    return x1 < 0 ? null : { x0, y0, x1, y1, nw: c.width, nh: c.height };
+  }
+  function placeAnim(img, b) {
+    const slot = img.parentElement;
+    if (!slot) return;
+    const sw = slot.clientWidth, sh = slot.clientHeight;
+    const w = b.x1 - b.x0 + 1, h = b.y1 - b.y0 + 1;
+    let k = (sw * 1.25) / 96; // same pixel size as the still sprites
+    if (h * k > sh * 0.80) k = (sh * 0.80) / h;
+    if (w * k > sw * 0.94) k = (sw * 0.94) / w;
+    const cx = (b.x0 + b.x1 + 1) / 2, below = b.nh - b.y1 - 1;
+    img.style.width = Math.round(b.nw * k) + 'px';
+    img.style.height = Math.round(b.nh * k) + 'px';
+    img.style.transform = 'none';
+    img.style.left = `calc(50% - ${Math.round(cx * k)}px)`;
+    img.style.bottom = `calc(14% - ${Math.round(below * k)}px)`;
+    img.classList.add('ready');
+  }
   function onSprite(e) {
     const img = e.target;
+    if (img.classList.contains('anim') || (img.dataset.try === '0' && /\.gif$/.test(img.src))) {
+      img.classList.add('anim');
+      let b = bounds.get(img.src);
+      if (!b) {
+        try { b = measure(img); } catch (err) { b = null; }
+        if (!b) { spriteFallback({ target: img }); return; }
+        bounds.set(img.src, b);
+      }
+      placeAnim(img, b);
+      return;
+    }
     if (img.dataset.trimmed) { place(img, trimmed.get(img.dataset.trimmed)); return; }
     let t = trimmed.get(img.src);
     if (!t) {
@@ -576,6 +625,7 @@
   }
   window.addEventListener('resize', () => {
     document.querySelectorAll('.slot img.ready[data-trimmed]').forEach(img => place(img, trimmed.get(img.dataset.trimmed)));
+    document.querySelectorAll('.slot img.ready.anim').forEach(img => placeAnim(img, bounds.get(img.src)));
   });
 
   function spriteFallback(e) {
@@ -583,7 +633,9 @@
     const next = +img.dataset.try + 1;
     if (next < SPRITES.length) {
       img.dataset.try = next;
-      img.classList.add('art');
+      img.classList.remove('anim', 'ready');
+      img.removeAttribute('style');
+      if (next === SPRITES.length - 1) img.classList.add('art');
       img.src = SPRITES[next](img.dataset.dex);
     } else {
       const slot = img.parentElement;
@@ -594,6 +646,12 @@
 
   // ---------------------------------------------------------------- input
   game.addEventListener('click', e => {
+    if (e.target.closest('.anim-toggle')) {
+      animOn = !animOn;
+      store.set('dexle:animate', animOn);
+      render();
+      return;
+    }
     const chip = e.target.closest('.chip');
     if (chip) {
       const open = chip.classList.contains('open');
