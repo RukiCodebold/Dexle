@@ -98,9 +98,16 @@
   .status .lives-text { color: var(--faint); margin-left: 8px; }
   .lives { display: flex; gap: 4px; }
   .status .right { display: flex; align-items: center; gap: 14px; }
-  .anim-toggle { font: inherit; font-size: 13px; color: var(--faint); background: none; border: 0; padding: 2px 0; cursor: pointer; text-decoration: underline dotted; text-underline-offset: 3px; }
-  .anim-toggle:hover { color: var(--ink, inherit); }
-  .anim-toggle:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+  /* sprite style: three tabs pressed into the parchment */
+  .sprite-style { display: inline-flex; border: 2px solid #8A6A44; background: rgba(90, 66, 40, .08); }
+  .sprite-style button { font: inherit; font-size: 13px; color: var(--faint); background: none; border: 0; padding: 2px 8px; cursor: pointer; }
+  .sprite-style button + button { border-left: 2px solid #8A6A44; }
+  .sprite-style button:hover { background: rgba(255, 248, 228, .35); }
+  .sprite-style button[aria-pressed="true"] { background: #8A6A44; color: #F6EBD0; cursor: default; }
+  .sprite-style button:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; position: relative; }
+  /* PMD portraits: a framed face, centred, no pedestal */
+  .slot.portrait::after { display: none; }
+  .slot img.pmd { bottom: auto; top: 50%; transform: translate(-50%, -50%); box-shadow: 0 0 0 2px #5A4228, 0 2px 0 2px rgba(59, 36, 20, .25); }
   .life { width: 13px; height: 13px; background: #B04A2A; box-shadow: inset 0 0 0 2px #5A2A1A; }
   .life.spent { background: rgba(147, 121, 90, .25); box-shadow: inset 0 0 0 2px rgba(147, 121, 90, .5); }
 
@@ -262,7 +269,7 @@
       </div>
     </details>
   </article>
-  <p class="colophon">A fan puzzle for the Clem Cobblemon community, inspired by the PokéSort puzzle on <a href="https://pokelike.xyz/">Pokelike</a>. Sprites from <a href="https://github.com/PokeAPI/sprites">PokéAPI</a>; Pokémon belongs to Nintendo, Game Freak, and Creatures.</p>
+  <p class="colophon">A fan puzzle for the Clem Cobblemon community, inspired by the PokéSort puzzle on <a href="https://pokelike.xyz/">Pokelike</a>. Sprites from <a href="https://github.com/PokeAPI/sprites">PokéAPI</a>. Portraits from <a href="https://sprites.pmdcollab.org/">PMD Collab</a> under <a href="https://creativecommons.org/licenses/by-nc/4.0/">CC BY-NC 4.0</a>, with each portrait's artists named when you hover over it. Pokémon belongs to Nintendo, Game Freak, and Creatures.</p>
 </main>
 
 <script src="dexle-core.js"></script>
@@ -312,7 +319,19 @@
     set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* private mode: play without saving */ } },
   };
   // animated sprites by default, unless the player turned them off or their system asks for less motion
-  let animOn = store.get('dexle:animate', !matchMedia('(prefers-reduced-motion: reduce)').matches);
+  const STYLES = [['animated', 'Animated'], ['static', 'Static'], ['portrait', 'Portraits']];
+  let spriteStyle = store.get('dexle:sprites', null);
+  if (!STYLES.some(([k]) => k === spriteStyle)) {
+    const old = store.get('dexle:animate', null); // the earlier on/off toggle
+    spriteStyle = old === false || (old === null && matchMedia('(prefers-reduced-motion: reduce)').matches) ? 'static' : 'animated';
+  }
+  // PMD Collab portraits, with each one's artists (CC BY-NC 4.0: credit is required)
+  const PORTRAIT = dex => `https://raw.githubusercontent.com/PMDCollab/SpriteCollab/master/portrait/${String(dex).padStart(4, '0')}/Normal.png`;
+  let PMD_CREDITS = null;
+  function pmdCredits() {
+    if (!PMD_CREDITS) PMD_CREDITS = fetch('pmd_credits.json').then(r => r.json()).catch(() => ({}));
+    return PMD_CREDITS;
+  }
 
 
   // ---------------------------------------------------------------- dates and codes
@@ -463,14 +482,14 @@
     let h = '';
     h += `<div class="status"><div><span class="which">${esc(view.title)}</span>`;
     h += view.mode === 'daily' ? ` <span class="lives-text">${esc(prettyDate(view.date))}</span>` : '';
-    h += `</div><div class="right"><button class="anim-toggle" type="button" aria-pressed="${animOn}">Animation: ${animOn ? 'on' : 'off'}</button><div class="lives" aria-label="${s.lives} of ${CONFIG.lives} lives left">`;
+    h += `</div><div class="right"><div class="sprite-style" role="group" aria-label="Sprite style">${STYLES.map(([k, label]) => `<button type="button" data-style="${k}" aria-pressed="${spriteStyle === k}">${label}</button>`).join('')}</div><div class="lives" aria-label="${s.lives} of ${CONFIG.lives} lives left">`;
     for (let i = 0; i < CONFIG.lives; i++) h += `<span class="life${i < s.lives ? '' : ' spent'}"></span>`;
     h += `</div></div></div>`;
 
     h += `<div class="board"><div class="slots">`;
     mons.forEach((m, i) => {
-      h += `<button class="slot${view.selected === i ? ' selected' : ''}" data-slot="${i}" ${done ? 'disabled' : ''} aria-label="${esc(m.name)}${view.selected === i ? ', picked up' : ''}">`;
-      h += `<img alt="" crossorigin="anonymous" data-dex="${m.dex}" data-try="${animOn ? 0 : 1}" src="${SPRITES[animOn ? 0 : 1](m.dex)}"></button>`;
+      h += `<button class="slot${spriteStyle === 'portrait' ? ' portrait' : ''}${view.selected === i ? ' selected' : ''}" data-slot="${i}" ${done ? 'disabled' : ''} aria-label="${esc(m.name)}${view.selected === i ? ', picked up' : ''}">`;
+      h += `<img alt="" crossorigin="anonymous" data-dex="${m.dex}" ${spriteStyle === 'portrait' ? `class="pmd" data-try="p" src="${PORTRAIT(m.dex)}"` : `data-try="${spriteStyle === 'animated' ? 0 : 1}" src="${SPRITES[spriteStyle === 'animated' ? 0 : 1](m.dex)}"`}></button>`;
     });
     h += `</div><div class="names" aria-hidden="true">`;
     mons.forEach((m, i) => { h += `<div class="name${view.selected === i ? ' selected' : ''}">${esc(m.name)}</div>`; });
@@ -600,8 +619,22 @@
     img.style.bottom = `calc(14% - ${Math.round(below * k)}px)`;
     img.classList.add('ready');
   }
+  function placePortrait(img) {
+    const slot = img.parentElement;
+    if (!slot) return;
+    const k = Math.max(1, Math.floor(Math.min(slot.clientWidth * 0.9, slot.clientHeight * 0.8) / img.naturalWidth));
+    img.style.width = img.naturalWidth * k + 'px';
+    img.style.height = img.naturalHeight * k + 'px';
+    img.classList.add('ready');
+  }
   function onSprite(e) {
     const img = e.target;
+    if (img.classList.contains('pmd')) {
+      placePortrait(img);
+      const slot = img.parentElement, dex = img.dataset.dex;
+      pmdCredits().then(c => { if (c[dex] && slot) slot.title = `Portrait by ${c[dex]} (PMD Collab)`; });
+      return;
+    }
     if (img.classList.contains('anim') || (img.dataset.try === '0' && /\.gif$/.test(img.src))) {
       img.classList.add('anim');
       let b = bounds.get(img.src);
@@ -626,14 +659,16 @@
   window.addEventListener('resize', () => {
     document.querySelectorAll('.slot img.ready[data-trimmed]').forEach(img => place(img, trimmed.get(img.dataset.trimmed)));
     document.querySelectorAll('.slot img.ready.anim').forEach(img => placeAnim(img, bounds.get(img.src)));
+    document.querySelectorAll('.slot img.ready.pmd').forEach(placePortrait);
   });
 
   function spriteFallback(e) {
     const img = e.target;
-    const next = +img.dataset.try + 1;
+    const next = img.dataset.try === 'p' ? 1 : +img.dataset.try + 1; // a missing portrait falls back to the still sprite
     if (next < SPRITES.length) {
       img.dataset.try = next;
-      img.classList.remove('anim', 'ready');
+      img.parentElement && img.parentElement.classList.remove('portrait');
+      img.classList.remove('anim', 'ready', 'pmd');
       img.removeAttribute('style');
       if (next === SPRITES.length - 1) img.classList.add('art');
       img.src = SPRITES[next](img.dataset.dex);
@@ -646,10 +681,15 @@
 
   // ---------------------------------------------------------------- input
   game.addEventListener('click', e => {
-    if (e.target.closest('.anim-toggle')) {
-      animOn = !animOn;
-      store.set('dexle:animate', animOn);
-      render();
+    const style = e.target.closest('.sprite-style button');
+    if (style) {
+      if (style.dataset.style !== spriteStyle) {
+        spriteStyle = style.dataset.style;
+        store.set('dexle:sprites', spriteStyle);
+        render();
+        const again = game.querySelector(`.sprite-style button[data-style="${spriteStyle}"]`);
+        if (again) again.focus();
+      }
       return;
     }
     const chip = e.target.closest('.chip');
