@@ -187,6 +187,15 @@
   .result.lost { color: var(--red); }
   .copied { color: var(--green); }
 
+  /* answer explanations */
+  .why { list-style: none; margin: 4px 0 0; padding: 0; display: grid; gap: 7px; }
+  .why li { display: grid; grid-template-columns: 7.5em 1fr; gap: 10px; align-items: baseline; }
+  .why .tag {
+    justify-self: start; padding: 0 7px; border: 2px solid var(--green); color: var(--green);
+    background: rgba(58, 122, 26, .14); font-size: 14px; white-space: nowrap;
+  }
+  .why b { font-weight: 600; }
+
   /* guesses and stats */
   h2 {
     font-family: "Kalam", cursive; font-weight: 700; font-size: 24px; margin: 22px 0 6px;
@@ -253,6 +262,7 @@
     .links { height: 58px; }
     .link:nth-child(even) .stem { height: 24px; }
     .guesses { grid-template-columns: 1fr; }
+    .why li { grid-template-columns: 1fr; gap: 2px; }
     .stat .num { font-size: 24px; }
   }
   @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
@@ -548,6 +558,71 @@
   // ---------------------------------------------------------------- drawing
   const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
+  // ---------------------------------------------------------------- answer explanations
+  const titleCase = s => s.split(/[_ ]/).map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+  const typeName = t => titleCase(t);
+  const eggName = e => e === 'human_like' ? 'Human-Like' : titleCase(e);
+  const types = m => m.types.map(typeName).join('/');
+  const eggs = m => [...m.eggs].map(eggName).join('/');
+  function andList(items) {
+    if (items.length < 2) return items.join('');
+    if (items.length === 2) return `${items[0]} and ${items[1]}`;
+    return `${items.slice(0, -1).join(', ')}, and ${items[items.length - 1]}`;
+  }
+  const STAT_INFO = {
+    HP: ['hp', 'HP'], ATK: ['atk', 'Attack'], DEF: ['def', 'Defence'], SPA: ['spa', 'Special Attack'],
+    SPD: ['spd', 'Special Defence'], SPEED: ['spe', 'Speed'], TOTAL: ['bst', 'stat total'],
+  };
+
+  // One sentence (HTML) saying why link l holds between a (left) and b (right).
+  function explain(l, a, b) {
+    const A = `<b>${esc(a.name)}</b>`, B = `<b>${esc(b.name)}</b>`;
+    const kind = l.name.replace(/^STAT_/, '').replace(/_(LT|GT|EQ|R|L)$/, '');
+    switch (kind) {
+      case 'GEN':
+        if (l.name === 'GEN_EQ') return `${A} (#${a.dex}) and ${B} (#${b.dex}) are both from Gen ${a.gen}.`;
+        return `${A} is from Gen ${a.gen} (#${a.dex}), ${l.name === 'GEN_LT' ? 'earlier' : 'later'} than ${B} from Gen ${b.gen} (#${b.dex}).`;
+      case 'STAGE':
+        if (l.name === 'STAGE_EQ') return `${A} and ${B} are both at evolution stage ${a.stage}.`;
+        return `${A} is at evolution stage ${a.stage}, ${l.name === 'STAGE_LT' ? 'earlier' : 'later'} than ${B} at stage ${b.stage}.`;
+      case 'BEATS': {
+        const [x, y, X, Y] = l.name === 'BEATS_R' ? [a, b, A, B] : [b, a, B, A];
+        const one = d => ({ types: [d] });
+        const hits = x.types.filter(t => C.multiplier(t, y) > 1).map(t => {
+          const weak = y.types.filter(d => C.multiplier(t, one(d)) > 1).map(typeName);
+          const four = C.multiplier(t, y) >= 4 ? ', for 4× damage' : '';
+          return `${typeName(t)} is super effective against ${weak.length > 1 ? 'both ' : ''}${andList(weak)}${four}`;
+        });
+        return `${X} (${types(x)}) beats ${Y} (${types(y)}): ${andList(hits)}.`;
+      }
+      case 'SHARES': {
+        const common = a.types.filter(t => b.types.includes(t)).map(typeName);
+        return `${A} (${types(a)}) and ${B} (${types(b)}) are both ${andList(common)} type.`;
+      }
+      case 'EGG': {
+        const common = [...a.eggs].filter(e => b.eggs.has(e)).map(eggName);
+        const groups = common.length === 1 ? `the ${common[0]} egg group` : `the ${andList(common)} egg groups`;
+        return `${A} (${eggs(a)}) and ${B} (${eggs(b)}) share ${groups}.`;
+      }
+      default: {
+        const info = STAT_INFO[kind];
+        if (!info) return esc(l.desc);
+        const [key, label] = info;
+        const more = l.name.endsWith('_GT');
+        return `${A}'s base ${label} of ${a[key]} is ${more ? 'higher' : 'lower'} than ${B}'s ${b[key]}.`;
+      }
+    }
+  }
+
+  function explanation(puzzle) {
+    const m = puzzle.answer;
+    let h = `<h2>Why it works</h2><ol class="why">`;
+    puzzle.links.forEach((l, i) => {
+      h += `<li><span class="tag">${esc(l.label)}</span><span>${explain(l, m[i], m[i + 1])}</span></li>`;
+    });
+    return h + `</ol>`;
+  }
+
   function render() {
     const { puzzle, state: s } = view;
     const done = !!s.done;
@@ -596,6 +671,7 @@
     }
     h += `</div>`;
     if (view.mode === 'daily') h += tallyLine();
+    if (done) h += explanation(puzzle);
 
     h += `<h2>Your guesses</h2>`;
     if (!s.guesses.length) h += `<p class="none">None yet.</p>`;

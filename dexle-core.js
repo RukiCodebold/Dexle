@@ -236,7 +236,8 @@
     return puzzle.links.map((l, i) => l.test(order[i], order[i + 1]));
   }
 
-  const api = { JavaRandom, monFrom, daily, seedFor, check, LINKS, genOf };
+  // multiplier is exported only so the page can explain answers; it isn't part of the mod's API.
+  const api = { JavaRandom, monFrom, daily, seedFor, check, LINKS, genOf, multiplier };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.DexleCore = api;
 })(typeof window !== 'undefined' ? window : globalThis);
