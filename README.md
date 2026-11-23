@@ -1,10 +1,12 @@
 # Dexle on the web
 
-The same daily puzzle as the Clem Cobblemon server, plus random puzzles with shareable links.
+A daily puzzle of its own, plus random puzzles with shareable links. It uses the Clem Cobblemon server's generator and
+species list, but from 2026-11-24 the website's daily puzzle is seeded differently, so it never matches the server's
+and people can play both without one spoiling the other.
 
 ## Files
 - `index.html`: the page
-- `dexle-core.js`: the puzzle generator (a line-for-line copy of the mod's, so puzzles match the server)
+- `dexle-core.js`: the puzzle generator (a line-for-line copy of the mod's; `index.html` picks the website's own daily seed)
 - `dexle_pool.json`: the species list. **Replace this with your server's copy** (see below)
 - `fonts/`: Kalam and Pixelify Sans (SIL Open Font License, see `fonts/OFL.txt`)
 

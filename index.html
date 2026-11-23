@@ -456,6 +456,14 @@
     for (const ch of code) v = v * 31n + BigInt(CODE_CHARS.indexOf(ch));
     return v * 1000003n + 17n; // far away from the daily seeds (epochDay * 31 + 7)
   }
+  // From this day on, the website's daily puzzle is its own, different from the server's, so neither one
+  // gives away the other. Earlier days keep the server's seed so their saved games and archive still match.
+  const OWN_DAILY_FROM = '2026-11-24';
+  function seedForDay(date) {
+    const server = C.seedFor(date);
+    if (date < OWN_DAILY_FROM) return server;
+    return server * 1000003n + 991n; // away from the server's seeds and from random codes (* 1000003 + 17)
+  }
   function dayUrl(date) {
     const u = new URL(location.href);
     u.search = `?d=${date}`;
@@ -487,7 +495,7 @@
         return;
       }
       key = 'dexle:daily:' + date;
-      seed = C.seedFor(date);
+      seed = seedForDay(date);
       title = `Dexle #${dayNumber(date)}`;
       view = { mode, date, key, title, past: date !== today };
     } else {
