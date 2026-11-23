@@ -1,7 +1,7 @@
 # Dexle on the web
 
 A daily puzzle of its own, plus random puzzles with shareable links. It uses the Clem Cobblemon server's generator and
-species list, but from 2026-11-24 the website's daily puzzle is seeded differently, so it never matches the server's
+species list, but from 2026-11-23 the website's daily puzzle is seeded differently, so it never matches the server's
 and people can play both without one spoiling the other.
 
 ## Files

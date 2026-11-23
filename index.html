@@ -458,7 +458,7 @@
   }
   // From this day on, the website's daily puzzle is its own, different from the server's, so neither one
   // gives away the other. Earlier days keep the server's seed so their saved games and archive still match.
-  const OWN_DAILY_FROM = '2026-11-24';
+  const OWN_DAILY_FROM = '2026-11-23';
   function seedForDay(date) {
     const server = C.seedFor(date);
     if (date < OWN_DAILY_FROM) return server;
